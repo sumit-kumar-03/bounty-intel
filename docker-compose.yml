@@ -1,0 +1,16 @@
+services:
+
+  bounty-intel:
+    build: .
+    image: bounty-intel:latest
+    container_name: bounty-intel
+    entrypoint: ["sh", "/usr/src/app/scripts/start.sh"]
+    working_dir: /usr/src/app
+    env_file:
+      - .env
+    environment:
+      HOST_UID: "1000"
+      HOST_GID: "1000"
+    volumes:
+      - .:/usr/src/app
+    restart: unless-stopped
