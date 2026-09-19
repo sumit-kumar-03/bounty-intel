@@ -1,0 +1,3 @@
+# bounty-intel daily scrape, host clock is Etc/UTC
+0 2 * * * cd /usr/src/app && /usr/local/bin/python3 /usr/src/app/scripts/run_daily_scrape.py >> /var/log/bounty_intel.log 2>&1
+
