@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from pymongo import UpdateOne
 
 from bounty_intel.core.schema import EngagementRecord
@@ -20,19 +22,26 @@ def write_engagements(db, records: list[EngagementRecord]) -> int:
 
 
 def write_parent_domains(db, records: list[EngagementRecord]) -> int:
-    domains: set[str] = set()
+    domain_to_engagement_ids: dict[str, set[str]] = defaultdict(set)
+
     for record in records:
         for target in record.scope:
+            if target.eligible_for_submission is not True:
+                continue  # skip out-of-scope / unknown-scope targets
             domain = extract_registrable_domain(
                 target.identifier, target.asset_type, record.platform
             )
             if domain:
-                domains.add(domain)
+                domain_to_engagement_ids[domain].add(record.id)
 
     ops = [
-        UpdateOne({"_id": domain}, {"$setOnInsert": {"_id": domain}}, upsert=True)
-        for domain in domains
+        UpdateOne(
+            {"_id": domain},
+            {"$addToSet": {"engagement_ids": {"$each": sorted(engagement_ids)}}},
+            upsert=True,
+        )
+        for domain, engagement_ids in domain_to_engagement_ids.items()
     ]
     if ops:
         db[PARENT_DOMAINS_COLLECTION].bulk_write(ops, ordered=False)
-    return len(domains)
+    return len(domain_to_engagement_ids)
