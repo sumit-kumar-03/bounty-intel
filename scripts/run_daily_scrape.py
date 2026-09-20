@@ -7,7 +7,8 @@ sys.path.insert(0, "/usr/src/app")
 from bounty_intel.core.logger import logger
 from bounty_intel.scrapers.bugcrowd import BugcrowdScraper
 from bounty_intel.scrapers.hackerone import HackerOneScraper
-from bounty_intel.support.output_writer import write_snapshot
+from bounty_intel.support.mongo_client import DB_NAME, get_client
+from bounty_intel.support.mongo_writer import write_engagements, write_parent_domains
 
 
 def main() -> int:
@@ -28,8 +29,20 @@ def main() -> int:
         logger.error("No records collected from any platform; aborting write")
         return 1
 
-    out_path = write_snapshot(records)
-    logger.info("Wrote %d records to %s", len(records), out_path)
+    client = get_client()
+    try:
+        db = client[DB_NAME]
+        n_engagements = write_engagements(db, records)
+        n_domains = write_parent_domains(db, records)
+        logger.info(
+            "Upserted %d engagements, %d unique parent domains into %s",
+            n_engagements,
+            n_domains,
+            DB_NAME,
+        )
+    finally:
+        client.close()
+
     return 0
 
 

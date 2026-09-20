@@ -8,9 +8,15 @@ services:
     working_dir: /usr/src/app
     env_file:
       - .env
-    environment:
-      HOST_UID: "1000"
-      HOST_GID: "1000"
     volumes:
       - .:/usr/src/app
+    networks:
+      - infra-net
     restart: unless-stopped
+
+
+networks:
+  infra-net:
+    # Owned/created by the infra-hub compose stack (../infra-hub).
+    name: infra-net
+    external: true

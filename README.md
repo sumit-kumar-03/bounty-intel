@@ -1,10 +1,9 @@
 # bounty-intel
 
 Daily scraper for Bugcrowd and HackerOne bug-bounty engagements. Runs in a
-Docker container on a daily cron, writes one JSON snapshot per day to
-`output/`. No code is baked into the image — this repo directory is
-bind-mounted into the container, and `output/` is written back through the
-same mount.
+Docker container on a daily cron, upserting current engagement data into
+MongoDB. No code is baked into the image — this repo directory is
+bind-mounted into the container.
 
 ## Setup
 
@@ -23,18 +22,39 @@ same mount.
      characters (Google Analytics cookies commonly do), escape each one as
      `$$` — Docker Compose interpolates `$VAR` syntax in `env_file` values
      and will otherwise silently blank them out.
-2. `docker compose up -d --build`
+   - `MONGO_HOST` / `MONGO_PORT` / `MONGO_INITDB_ROOT_USERNAME` /
+     `MONGO_INITDB_ROOT_PASSWORD` — the shared MongoDB instance managed by
+     the sibling [`infra-hub`](../infra-hub) repo. Defaults point at
+     `infra-mongodb`; only the credentials normally need filling in.
+2. Make sure `infra-hub`'s stack is up (`docker compose up -d` in
+   `../infra-hub`) so the `infra-net` network and `infra-mongodb` exist.
+3. `docker compose up -d --build`
 
 The container runs one scrape immediately on startup, then again daily at
 `02:00 UTC` via cron (`scripts/crontab`).
 
-## Output
+## Storage
 
-`output/engagements_<YYYY-MM-DD>.json` — a JSON list of engagement records,
-each following the schema in `bounty_intel/core/schema.py`
-(`EngagementRecord`): platform, handle, name, url, reward, access status,
-industry, dates, `scope` (list of in-scope targets, may be empty), and a
-`platform_data` passthrough of the raw source fields.
+Each run upserts into the shared `infra-mongodb` instance, database
+`bug_bounty`:
+
+- **`engagements`** — one document per engagement, `_id` is the same
+  `"<platform>:<handle>"` value previously used as `EngagementRecord.id`.
+  Each run does a merge-update (`$set` of every scraped field, not a full
+  document replace), so the collection always reflects the latest scrape
+  for its scraper-owned fields while any other data added to a document
+  survives. There is no per-day history inside Mongo — re-running the
+  scrape does not create new entries, matching the schema in
+  `bounty_intel/core/schema.py` (`EngagementRecord`).
+- **`parent_domains`** — minimal `{_id: "<domain>"}` documents, one per
+  unique registrable domain extracted from every engagement's
+  `scope[].identifier`, via `bounty_intel/support/domain_extractor.py`
+  (`tldextract`, running fully offline against its bundled public-suffix
+  snapshot). Non-domain scope entries (IPs, CIDRs, mobile app/store IDs,
+  source-code links, free text) are safely skipped.
+
+Historical JSON snapshots (`output/engagements_<date>.json`) from before
+this migration remain on disk for reference; nothing new is written there.
 
 ## How Bugcrowd scope is fetched
 
@@ -61,3 +81,6 @@ A small number of engagements use a different brief layout with no
 ```
 docker compose exec bounty-intel python scripts/run_daily_scrape.py
 ```
+
+Re-running is idempotent — it upserts rather than creating a new dated
+file.
